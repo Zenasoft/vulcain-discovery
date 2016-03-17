@@ -59,11 +59,11 @@ export class Runner implements IRunner
     
     private createReporter() 
     {
-        if(this.options.kv.startsWith("consul://")) {
+        if(this.options.kv && this.options.kv.startsWith("consul://")) {
             this.options.kv = this.options.kv.substr("consul://".length);
             this.reporter = new ConsulReporter(this.options);
         }
-        else if(this.options.kv.startsWith("etcd://")) {
+        else if(this.options.kv && this.options.kv.startsWith("etcd://")) {
             this.options.kv = this.options.kv.substr("etcd://".length);
             this.reporter = new EtcdReporter(this.options);            
         }

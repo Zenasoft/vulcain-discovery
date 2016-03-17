@@ -3,7 +3,7 @@ import {Options} from './options'
 import {Runner} from './runner'
 import {Parser} from './flags'
 
-const version = "1.0.0-beta2";
+const version = "1.0.0-beta3";
 console.log("Service discover - Version " + version);
 
 let parser = new Parser("vulcain-discovery", "service discovery - version " + version); 

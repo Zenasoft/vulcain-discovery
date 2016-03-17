@@ -122,6 +122,7 @@ export class Discover
             let container = <ContainerInfo>{id:data.Id, ports:[]};
             let image = await this.inspectImageAsync(data.Image);
             if(image) {
+                container.image = image.RepoTags && image.RepoTags.length > 0 && image.RepoTags[0];
                 // Merge labels from image and container
                 let labels = image.Config && image.Config.Labels;
                 if(labels)

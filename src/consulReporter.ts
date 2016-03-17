@@ -210,6 +210,7 @@ export class ConsulReporter implements IReporter
         });
 
         watch.on('error', function(err) {
+            watch.end();
             self.panic(err);
         });
     }
@@ -227,6 +228,7 @@ export class ConsulReporter implements IReporter
         });
 
         watch.on('error', function(err) {
+            watch.end();
             self.panic(err);
         });
     }
