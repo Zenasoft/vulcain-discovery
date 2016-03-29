@@ -3,13 +3,18 @@ import {Options} from './options'
 import {Runner} from './runner'
 import {Parser} from './flags'
 
-const version = "1.0.0-beta3";
+const version = "1.0.0-beta20";
 console.log("Service discover - Version " + version);
 
 let parser = new Parser("vulcain-discovery", "service discovery - version " + version); 
 let flags = parser.run<Options>(new Options());
 
-if(flags) {
+if(flags) 
+{
+    if( ['private', 'public', 'all', 'dev'].indexOf(flags.proxyMode) < 0) {
+        console.log("Invalid proxyMode argument.");
+        process.exit(1);
+    }
     console.log("Cluster : " + flags.cluster);
     flags.version = version;
     let runner = new Runner(flags);

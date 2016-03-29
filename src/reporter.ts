@@ -24,6 +24,8 @@ export interface IReporter
     watchRuntimeChanges(queue); 
     watchDefinitionsChanges(queue);  
     removeServicesAsync(); 
+    getRuntimeServicesAsync(): Promise<Array<any>>;
+    notifyRuntimeChangedAsync();
 }
 
 export interface ServicePortDefinition 
@@ -40,6 +42,7 @@ export interface ConfigDefinition
 
 export interface ServiceVersionDefinition extends ConfigDefinition 
 {
+    publicPath:string;
     version:string;
     status:string;
     enabled:boolean;

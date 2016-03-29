@@ -18,7 +18,7 @@ export class Options
 {
     @Argument({name:"services-advertise", description:"Address used to exposed service", defaultValue:null})    
     hostIp:string;
-    @Argument({name:"ttl", description:"Session time to live in seconds (default 20)", defaultValue:20})
+    @Argument({name:"ttl", description:"Session time to live in seconds (default 30)", defaultValue:30})
     ttl:number;
     @Argument({name:"kv", description:"KV address", defaultValue:null})
     kv:string;
@@ -30,8 +30,10 @@ export class Options
     dockerAddress:string;
     @Argument({name:"cluster", description:"Cluster name", env:"VULCAIN_CLUSTER"})
     cluster:string;
-    @Argument({name:"refresh", description:"HAProxy configuration reload interval in seconds.", defaultValue:3})
+    @Argument({name:"refresh", description:"HAProxy configuration reload interval in seconds.", defaultValue:5})
     refresh:number;
+    @Argument({name:"proxy-mode", description:"Service exposition (public|private|all|dev).", defaultValue:"private"})
+    proxyMode:string;
     @Argument({name:"template", description:"TemplateFileName", defaultValue:"haproxy.tpl"})
     templateFileName:string;
     @Argument({name:"target-file", description:"Config file name", defaultValue:"/var/haproxy/haproxy.cfg"})

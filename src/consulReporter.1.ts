@@ -23,7 +23,7 @@ import {ServiceDefinition, ServiceVersionDefinition, IReporter} from './reporter
 
 // vulcain/<cluster>/runtime/services/<host>/<name>/<version>/<id>
 // vulcain/<cluster>/runtime/hosts/<host>
-export class ConsulReporter implements IReporter
+export class AbstractReporter implements IReporter
 {
     private lastRefreshValue:string;
     private consul;
@@ -62,36 +62,61 @@ export class ConsulReporter implements IReporter
                 {"discovery" : this.options.version}
             ]
         }; 
-                
-        this.consul.kv.set(
-            this.hostKey,
-            JSON.stringify(hostDefinition),
-            { acquire: this.sessionId },
-            (err) => { 
-                console.log(">> Host registered with %j session : %s, %s", hostDefinition, this.sessionId, err||"");
-                if(err)
-                    self.panic(err);
-            }
-        );  
+        
+        try {
+            this.setAsync(this.hostKey, JSON.stringify(hostDefinition));
+        }
+        catch(err) {
+            console.log(">> Host registered with %j session : %s, %s", hostDefinition, this.sessionId, err||"");
+            if(err)
+                self.panic(err);
+        }
     }
     
-    private async renewAsync() 
+    private setAsync(key:string, value) 
     {
-        let self = this;
-        try 
+        return new Promise((resolve, reject) => 
         {
-            await self.renewSessionAsync();
-            let host = await this.getAsync(this.hostKey);
-            if(!host) {
-                self.panic("Host Watchdog failed.");
-                return;
-            }
-            
-            setTimeout( self.renewAsync.bind(self), self.options.ttl * 1000 / 2);
-        }
-        catch(e) {
-            self.panic(e);
-        }
+            this.consul.kv.set(
+                key,
+                value,
+                { acquire: this.sessionId }, 
+                (err) => {
+                    if(err)
+                    reject(err);
+                    else
+                        resolve();
+                }
+            );
+        });  
+    }
+    
+    private removeRecursiveAsync(key:string, recurse?:boolean) 
+    {
+        return new Promise<any>((resolve, reject) => 
+        {
+            this.consul.kv.del({key:key, recurse:!!recurse}, (err,data) => {
+                if(err) 
+                    reject(err);
+                 else {
+                    resolve(data);
+                 }
+            });
+        });   
+    }
+    
+    private getAsync(key:string, recurse?:boolean) 
+    {
+        return new Promise<any>((resolve, reject) => 
+        {
+            this.consul.kv.get({key:key, recurse:!!recurse}, (err,data) => {
+                if(err) 
+                    reject(err);
+                 else {
+                    resolve(data);
+                 }
+            });
+        });   
     }
     
     createSessionAsync() 
@@ -137,67 +162,40 @@ export class ConsulReporter implements IReporter
             });
         });        
     }
+        
+    private async renewAsync() 
+    {
+        let self = this;
+        try 
+        {
+            await self.renewSessionAsync();
+            let host = await this.getAsync(this.hostKey);
+            if(!host) {
+                self.panic("Host Watchdog failed.");
+                return;
+            }
+            
+            setTimeout( self.renewAsync.bind(self), self.options.ttl * 1000 / 2);
+        }
+        catch(e) {
+            self.panic(e);
+        }
+    }
     
     async registerServiceAsync(service:ContainerInfo) 
     {
-        return new Promise((resolve, reject) => {
-            this.consul.kv.set(
-                `${this.runtimePrefix}/${service.name}/${service.version}/${service.id}`, 
-                JSON.stringify(service),
-                {acquire: this.sessionId},
-                (err,data) => {
-                if(err) 
-                    reject(err);
-                else {
-                    if(this.options.debug)
-                        console.log(">> Service registered into kv store " + service.id );
-                    resolve(data);
-                }
-            });
-        });
+        await this.setAsync(`${this.runtimePrefix}/${service.name}/${service.version}/${service.id}`, JSON.stringify(service));
+        if(this.options.debug)
+            console.log(">> Service registered into kv store " + service.id ); 
     }
     
     notifyRuntimeChangedAsync() 
     {
-        return new Promise<any>((resolve, reject) => 
-        {
-            this.consul.kv.set(`vulcain/${this.options.cluster}/runtime/services/refresh`, 
-                Date.now().toString(), 
-                {}, (err,data) => {
-                if(err) 
-                    reject(err);
-                 else {
-                    resolve(data);
-                 }
-            });
-        });   
-    }
-    
-    private getAsync(key:string) 
-    {
-        return new Promise<any>((resolve, reject) => 
-        {
-            this.consul.kv.get(key, (err,data) => {
-                if(err) 
-                    reject(err);
-                 else {
-                    resolve(data);
-                 }
-            });
-        });   
+        return this.setAsync(`vulcain/${this.options.cluster}/runtime/services/refresh`, Date.now().toString()); 
     }
     
     getRuntimeServicesAsync() {
-        return new Promise<any>((resolve, reject) => 
-        {
-            this.consul.kv.get({key:`vulcain/${this.options.cluster}/runtime/services`, recurse:true}, (err,data) => {
-                if(err) 
-                    reject(err);
-                 else {
-                    resolve(data);
-                 }
-            });
-        });  
+        return this.getAsync(`vulcain/${this.options.cluster}/runtime/services`, true);
     }
     
     async getServiceDefinitionAsync(name:string) : Promise<ServiceDefinition> {
@@ -211,29 +209,12 @@ export class ConsulReporter implements IReporter
     }
     
     removeServicesAsync() {
-        return new Promise((resolve, reject) => {
-            let key = this.runtimePrefix;
-            this.consul.kv.del({key:key, recurse:true},
-            (err,data) => {
-                resolve(data);
-            });
-        });        
+        return this.removeRecursiveAsync(this.runtimePrefix);    
     }
     
-    removeServiceAsync(service:ContainerInfo) {
-        return new Promise((resolve, reject) => {
-            let key = `${this.runtimePrefix}/${service.name}/${service.version}/${service.id}`;
-            this.consul.kv.del({key:key, recurse:true},
-            (err,data) => {
-                if(err) 
-                    reject(err);
-                else {
-                    if(this.options.debug)
-                        console.log(">> Service removed from kv store " + service.id );
-                    resolve(data);
-                }
-            });
-        });        
+    removeServiceAsync(service:ContainerInfo) 
+    {
+        return this.removeRecursiveAsync(`${this.runtimePrefix}/${service.name}/${service.version}/${service.id}`);     
     }
     
     // Listening on changes in service definitions via webadmin

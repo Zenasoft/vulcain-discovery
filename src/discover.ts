@@ -18,6 +18,7 @@ import {Options} from './options'
 import * as fs from 'fs'
 import * as Path from 'path'
 import * as Url from 'url'
+import * as os from 'os'
 var Docker = require('dockerode');
 
 export interface IRunner 
@@ -30,6 +31,7 @@ export interface ContainerPortInfo {
     port:number;
     boundedPort:number;
     ip:string;
+    localIP:string;
 }
 
 export interface ContainerInfo {
@@ -46,6 +48,8 @@ export interface ContainerInfo {
     defaultVersion?:boolean;
     cluster:string;
     address:string;
+    host:string;
+    publicPath:string;
 }
 
 export class Discover 
@@ -119,7 +123,7 @@ export class Discover
     {
         try 
         {
-            let container = <ContainerInfo>{id:data.Id, ports:[]};
+            let container = <ContainerInfo>{id:data.Id, ports:[], host:os.hostname()};
             let image = await this.inspectImageAsync(data.Image);
             if(image) {
                 container.image = image.RepoTags && image.RepoTags.length > 0 && image.RepoTags[0];
@@ -130,12 +134,14 @@ export class Discover
                 labels = (data.Config && data.Config.Labels) || data.Labels;
                 if(labels)
                     this.extractLabels(container, labels);
+                    
                 if( container.name && container.version) 
                 {
-                    if( data.NetworkSettings && data.NetworkSettings.Ports)
-                        this.extractAlternatePortInfo(data.NetworkSettings.IPAddress, container, data.NetworkSettings.Ports);
-                    else
-                        this.extractPortInfo(data.NetworkSettings.IPAddress, container, data.Ports);                  
+                    let containerIp = data.NetworkSettings.Networks["net-" + this.options.cluster] && data.NetworkSettings.Networks["net-" + this.options.cluster].IPAddress;
+                    if( data.NetworkSettings && data.NetworkSettings.Ports) // event
+                        this.extractAlternatePortInfo(containerIp, container, data.NetworkSettings.Ports);
+                    else // Inspect
+                        this.extractPortInfo(containerIp, container, data.Ports);                  
                     return container; 
                 }
             }
@@ -160,15 +166,16 @@ export class Discover
     
     private extractPortInfo(containerIP:string, container:ContainerInfo, ports) 
     {        
-        if (ports)
+        if (ports && containerIP)
         {
             for (let bind of ports)
             {             
                 if(bind.Type !== "tcp" || !bind.PublicPort) continue;
                 container.ports.push( {
                     port: bind.PrivatePort,
+                    localIP: containerIP,
                     boundedPort: bind.PublicPort, 
-                    ip: (bind.IP !== "0.0.0.0" && bind.IP) || this.options.hostIp || containerIP
+                    ip: (bind.IP !== "0.0.0.0" && bind.IP) || containerIP
                 });
             }
         }
@@ -176,7 +183,7 @@ export class Discover
     
     private extractAlternatePortInfo(containerIP:string, container:ContainerInfo, ports) 
     {        
-        if (ports)
+        if (ports && containerIP)
         {
             for (let prop in ports)
             {
@@ -193,8 +200,9 @@ export class Discover
                     let port = parseInt( parts[0] );
                     container.ports.push( {
                         port: port, 
+                        localIP: containerIP,
                         boundedPort: bind[0].HostPort, 
-                        ip: (bind[0].HostIp !== "0.0.0.0" && bind[0].HostIp) || this.options.hostIp || containerIP
+                        ip: (bind[0].HostIp !== "0.0.0.0" && bind[0].HostIp) || containerIP
                     });
                 }
             }
@@ -218,14 +226,14 @@ export class Discover
                 continue;
             }
             
-            if( lowercaseLabel === Discover.Label_Version && value && value.length > 3) 
+            if( lowercaseLabel === Discover.Label_Version && value && value.length > 2) 
             {
-                // Normalize version Vmajor.minor.build
+                // Normalize version major.minor
                 if( value[0] === "v" || value[0] === "V")
                     value = value.substr(1);
                 let parts = value.split('.');
-                if( parts.length === 3) {
-                    container.version = value;
+                if( parts.length === 2 || parts.length === 3) {
+                    container.version = parts[0] + "." + parts[1];
                 }
                 continue;
             }
@@ -264,12 +272,16 @@ export class Discover
         {
             self.docker.listContainers(async (err,data)=>{
                 if(err) {
+                    console.log("error listing containers ");
                     reject(err);
                 }
                 let list = [];
-                for(let item of data) {
-                    let container = await self.extractInfosFromContainer(item); 
-                    list.push(container);
+                if(data) {
+                    for(let item of data) {
+                        let container = await self.extractInfosFromContainer(item); 
+                        if(container)
+                            list.push(container);
+                    }
                 }
                 resolve(list);
             });
@@ -287,7 +299,7 @@ export class Discover
             // Find cluster network
             self.docker.listNetworks((err, networks:Array<any>) => 
             {
-                let addr;
+                let addr=null;
                 let network = !err && networks.find(n=>n.Name===networkName);
                 if(network)
                 {

@@ -34,7 +34,7 @@ export class Runner implements IRunner
     private defQueue;
     private changes = 0;
     private clusterProxyAddress:string;
-    private eventEmitter:events.EventEmitter;
+    private restarting:boolean;
     
     constructor(private options:Options) 
     {
@@ -44,31 +44,35 @@ export class Runner implements IRunner
         this.discover = new Discover(options, this);
         
         this.createReporter();
-        
-        this.eventEmitter = new events.EventEmitter();
-        this.eventEmitter.on("Error", (err)=> 
+    }
+    
+    private panic(err) 
+    {
+        if(this.restarting) return;
+        this.restarting = true;
+        console.log("*** " + (err.stack||err));
+        console.log("*** Restarting in 30 secondes ...");
+        let self = this;
+        setTimeout(function() 
         {
-           console.log("*** " + err);
-           console.log("*** PANIC MODE *** restarting in 30 secondes ...");
-           setTimeout(function() 
-           {
-               process.exit(1);
-           }, 30000); 
-        });
+            if(self.restarting)
+                process.exit(1);
+        }, 30000);        
     }
     
     private createReporter() 
     {
         if(this.options.kv && this.options.kv.startsWith("consul://")) {
             this.options.kv = this.options.kv.substr("consul://".length);
-            this.reporter = new ConsulReporter(this.options);
+            this.reporter = new ConsulReporter(this.options, this.panic.bind(this));
         }
         else if(this.options.kv && this.options.kv.startsWith("etcd://")) {
             this.options.kv = this.options.kv.substr("etcd://".length);
-            this.reporter = new EtcdReporter(this.options);            
+            throw "notimplemented";
+            //this.reporter = new EtcdReporter(this.options, this.panic.bind(this));            
         }
         else {
-            this.reporter = new ConsulReporter(this.options);         
+            this.reporter = new ConsulReporter(this.options, this.panic.bind(this));         
         }
     }
     
@@ -86,6 +90,7 @@ export class Runner implements IRunner
             this.discover.start(this);            
             await this.reporter.startAsync();
             
+            // Inspect local containers, update kv
             Util.log("Inspecting local containers.");
             let containers =  await this.discover.listContainersAsync();
             containers.forEach(async (container:ContainerInfo)=> 
@@ -93,72 +98,89 @@ export class Runner implements IRunner
                 if(container)
                     await this.addService(container);
             });
-            this.reporter.watchRuntimeChanges(this.runtimeQueue);
-            this.reporter.watchDefinitionsChanges(this.defQueue);
             
+            // Start listening changes in kv
             this.runtimeQueue
                 .debounce(this.options.refresh*1000)
                 .subscribe(this.onRuntimeChanged.bind(this)); 
             this.defQueue
                 .debounce(this.options.refresh*1000)
                 .subscribe(this.refreshLocalAsync.bind(this)); 
-        }
+ 
+            this.reporter.watchRuntimeChanges(this.runtimeQueue);
+            this.reporter.watchDefinitionsChanges(this.defQueue);
+            
+            // Notify other agents
+            await this.reporter.notifyRuntimeChangedAsync();
+       }
         catch(e) {
-            Util.log(e);
+            this.panic(e);
         }
     }
     
     async refreshLocalAsync() 
     {
-        if(this.changes == 0) return;
+        if(this.changes == 0 || this.restarting) return;
         try 
         {
             Util.log("Definitions change occurred. Refreshing local containers...");
-            let services = [];
             await this.reporter.removeServicesAsync();
             let containers =  await this.discover.listContainersAsync();
             containers.forEach(async (container:ContainerInfo)=> 
             {
                 if(container) {
                     container = await this.addService(container);
-                    if(container) services.push(container);
                 }
             });     
-            this.runtimeQueue.onNext(services);
+            
+            // Force rebuild proxy configurations with all services
+            this.runtimeQueue.onNext(false);
         }
         catch(e) {
-            Util.log(e);
+            this.panic(e);
         }   
     }
     
     async serviceAdded(id:string) 
     {
-        let container = await this.discover.inspectContainerAsync(id);
-        if(!container)
-        {
-            return;
+        try {
+            let container = await this.discover.inspectContainerAsync(id);
+            if(!container)
+            {
+                return;
+            }
+            await this.addService(container);
+            await this.reporter.notifyRuntimeChangedAsync();
         }
-        await this.addService(container);
+        catch(e) {
+            this.panic(e);
+        }
     }
     
     private async addService(container:ContainerInfo)
     {
         try
         {            
+            if(this.restarting) return;
+            
             // Target another specific cluster ?
             if( container.cluster && container.cluster.toLowerCase() !== this.options.cluster.toLowerCase())
                 return;
                 
             // Is it a valid and enabled version ?
-            let vdef = await this.reporter.getServiceVersionDefinitionAsync(container.name, container.version);
-            if(!vdef || !vdef.enabled ) return;
-            let def = await this.reporter.getServiceDefinitionAsync(container.name);
-           
-            container.balance = vdef.balance || def.balance;
-            container.scheme = vdef.scheme || def.scheme;
-            container.check  = vdef.check || def.check;
-            container.port = def.port;
-            container.address = `${this.clusterProxyAddress}:${def.port}`;
+            if(this.options.proxyMode !== "dev") 
+            {
+                let vdef = await this.reporter.getServiceVersionDefinitionAsync(container.name, container.version);
+                if(!vdef || !vdef.enabled ) return;
+                let def = await this.reporter.getServiceDefinitionAsync(container.name);
+            
+                container.balance = vdef.balance || def.balance;
+                container.scheme = vdef.scheme || def.scheme;
+                container.check  = vdef.check || def.check;
+                container.port = def.port;
+                container.address = `${this.clusterProxyAddress}:${def.port}`;
+                container.publicPath = vdef.publicPath;
+            }
             
             // OK, service can be registered
             await this.reporter.registerServiceAsync(container);
@@ -168,7 +190,7 @@ export class Runner implements IRunner
             return container;
         }
         catch(e) {
-            Util.log(e);            
+            this.panic(e);          
         }
     }
     
@@ -184,62 +206,61 @@ export class Runner implements IRunner
             }
         }
         catch(e) {
-            Util.log(e);            
+            this.panic(e);          
         }
     }
     
     // container {id, version, name, port} -> service(name)/version(version)/[id]
-    private async onRuntimeChanged(containers:Array<any>) 
+    private async onRuntimeChanged() 
     {      
-        this.changes++;
-        let services = new Map<string,ServiceInfo>();
-        let cx=0;
-        for(let kv of containers) 
-        {
-            let container = kv;
-            if(kv.Value !== undefined && kv.Key !== undefined ) { 
-                if(kv.Key.split("/").length === 5) continue; // Host info
-                container = <ContainerInfo>JSON.parse(kv.Value);
-            }
+        let containers = await this.reporter.getRuntimeServicesAsync();
+        if(this.options.debug)
+            Util.log(`onRuntimeChanged with ${containers.length} containers`);
             
-            let service = services.get(container.name);
-            if(!service)
-            {
-                let local = this.localServices.get(container.id);
-                if(local) {
-                    service = {name:local.name, versions:[], port:local.port, scheme:container.scheme};
-                    services.set(container.name, service);
-                }
-            }
-            
-            let version = service.versions.find(v=>v.version===container.version);
-            if(!version) {
-                version = {default:true, instances:[], version:container.version, balance:container.balance, check:container.check}
-                service.versions.push(version);
-                // Set default version (the greater)
-                let greaterVersion;
-                service.versions.forEach(v=>{
-                    if(!greaterVersion || v.version > greaterVersion) { 
-                        v.default=true;
-                        greaterVersion=v.version;
-                    }
-                    else
-                        v.default=false;
-                })
-            }
-            version.instances.push(container);
-            cx++;
+        if(this.restarting) {
+            Util.log("Ignore changes, pending restart...");
+            return;
         }
-        
-        // Notify template 
         try 
         {
+            this.changes++;
+            
+            // Aggregate container by service/versions/containers
+            let services = new Map<string,ServiceInfo>();
+            let cx=0;
+            for(let kv of containers) 
+            {
+                if(kv.Key.split("/").length === 5) continue; // refresh
+                let container = <ContainerInfo>JSON.parse(kv.Value);        
+                if(!container) continue;
+                
+                let service = services.get(container.name);
+                if(!service)
+                {
+                    service = {name:container.name, versions:[], port:container.port, scheme:container.scheme};
+                    services.set(container.name, service);
+                }
+                
+                let version = service.versions.find(v=>v.version===container.version);
+                if(!version) {
+                    version = {instances:[], version:container.version, publicPath:container.publicPath, balance:container.balance, check:container.check}
+                    // Insert in order (ascending)
+                    let idx = service.versions.findIndex(v=>v.version>version.version);
+                    if(idx < 0) idx = service.versions.length;
+                    service.versions.splice(idx, 0, version);                
+               }
+                
+                version.instances.push(container);
+                cx++;
+            }
+            
+            // Notify template 
             let template = new Template(this.options);
             Util.log(`Generating template file with ${services.size} services (${cx} instances)`);
             await template.transformAsync(this.clusterProxyAddress, Array.from(services.values()));
         }
         catch(err) {
-            Util.log(err);
+            this.panic(err);          
         }
     }
 }

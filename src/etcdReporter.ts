@@ -17,7 +17,6 @@ import {ContainerInfo} from './discover'
 import {Options} from './options'
 import * as os from 'os'
 var Rx =require('rx')
-import * as events from 'events';
 import {ServiceDefinition, ServiceVersionDefinition, IReporter} from './reporter'
 
 // vulcain/<cluster>/runtime/services/<host>/<name>/<version>/<id>
@@ -29,19 +28,14 @@ export class EtcdReporter implements IReporter
     private lastIndex:string;
     private Options:Options;
     
-    constructor(private options:Options) 
+    constructor(private options:Options,  private panic: (err)=>void) 
     {
-        this.options.ttl = options.ttl || 20;
+        this.options.ttl = options.ttl || 30;
         this.etcd = new Etcd(options.kv || "local-store", 2379);  
         this.runtimePrefix = `vulcain/${options.cluster}/runtime/services/${os.hostname()}`;  
         console.log("Starting consul reporter on " + (options.kv || "local-store"));
     }
-           
-    private panic(err) {
-        let e = new events.EventEmitter();  
-        e.emit("Error", err);
-    }
-    
+               
     async startAsync() 
     {
         let self = this;

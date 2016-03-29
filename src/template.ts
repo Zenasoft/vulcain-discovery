@@ -23,11 +23,11 @@ import {ConfigDefinition} from './reporter'
 
 export interface VersionInfo
 {
-    default:boolean;
     version:string;
     balance:string;
     check:string;
     instances: Array<ContainerInfo>;
+    publicPath:string;
 }
 
 export interface ServiceInfo
@@ -77,48 +77,27 @@ export class Template
                         return;
                     }
                         
-                    let rules = [];
+                    let ctx = {frontends:[], backends:[], publicFrontends:null};
+                    
                     for(let service of services) 
                     {        
-                        var serviceName = service.name.replace('.', '_') + "_" + service.port;
-                        rules = rules.concat([
-                            "",
-                            "frontend " + serviceName,
-                            `  bind ${proxyAddress||"*"} : ${service.port}`
-                        ]);
-
-                        if (service.scheme) {
-                            rules.push("  mode " + service.scheme);
-                        }
-                                
-                        for(let version of service.versions)
-                        {    
-                            let backend = "backend_" + serviceName + "_" + version.version;
-                            if (version.default) {
-                                // last 
-                                rules.push("  default_backend " + backend);
-                            }
-                            else {
-                                var acl = backend + "_acl";
-                                rules.push("  acl " + acl + " path_beg /" + version.version);
-                                rules.push("  use_backend " + backend + " if " + acl);
-                            }
-
-                            rules.push("");
-                            rules.push("backend " + backend);
-                            rules.push("  balance " + (version.balance || "roundrobin"));
-                                                                
-                            version.instances.forEach(instance => 
-                            {
-                                instance.ports.forEach(pdef=>
-                                    rules.push("  server server_" + instance.id + "_" + pdef.boundedPort + " " + pdef.ip + ":" + pdef.boundedPort + " " + (instance.check || ""))
-                                );
-                            });
-                        }
+                        // dev expose all services with no binding address
+                        if( self.options.proxyMode !== 'public' || self.options.proxyMode === 'dev')
+                            self.emitPrivateConfigurations(service, self.options.proxyMode === 'public' && proxyAddress, ctx);                         
+                        if( self.options.proxyMode !== 'private' && self.options.proxyMode !== 'dev')
+                            self.emitPublicConfigurations(service, ctx);
+                        self.emitBackends(service, ctx);
                     }
                 
-                    var newConfig = data + rules.join('\n');    
-                                
+                    var newConfig = data + ctx.frontends.join('\n');
+                    if(ctx.publicFrontends)
+                        newConfig += ctx.publicFrontends.join('\n');
+                    newConfig += ctx.backends.join('\n');    
+                    if(self.options.debug)
+                        console.log(self.options.configFileName + " -> " + newConfig);
+                    
+                    //resolve(true);return;
+                    
                     fs.writeFile(self.options.configFileName, newConfig, function (err)
                     {
                         if (err)
@@ -146,5 +125,90 @@ export class Template
                 reject(e);
             }
         });
+    }
+    
+    private emitPrivateConfigurations(service, proxyAddress, ctx) 
+    {
+        let serviceName = service.name.replace('.', '_') + "_" + service.port;
+
+        ctx.frontends = ctx.frontends.concat([
+            "",
+            "frontend " + serviceName,
+            `  bind ${proxyAddress||"*"}:${service.port}`     
+            //`  bind *:${service.port}`
+        ]);
+
+        if (service.scheme) {
+            ctx.frontends.push("  mode " + service.scheme);
+        }
+
+        let last = service.versions[service.versions.length-1];
+        for(let version of service.versions)
+        {    
+            let backend = "backend_" + serviceName + "_" + version.version;
+            if (version === last) {
+                // last 
+                ctx.frontends.push("  default_backend " + backend);
+            }
+            else {
+                var acl = backend + "_acl";
+                ctx.frontends.push("  acl " + acl + " path_beg /" + version.version);
+                ctx.frontends.push("  use_backend " + backend + " if " + acl);
+            }
+        }
+    }
+    
+    private emitBackends(service, ctx) 
+    {
+        let serviceName = service.name.replace('.', '_') + "_" + service.port;
+
+        for(let version of service.versions)
+        {    
+            let backend = "backend_" + serviceName + "_" + version.version;
+            ctx.backends.push("");
+            ctx.backends.push("backend " + backend);
+            ctx.backends.push("  balance " + (version.balance || "roundrobin"));
+                                                
+            version.instances.forEach(instance => 
+            {
+                instance.ports.forEach(pdef=>
+                    ctx.backends.push("  server server_" + instance.id + "_" + pdef.boundedPort + " " + pdef.ip + ":" + pdef.port + " " + (instance.check || ""))
+                );
+            });
+        }
+    }
+    
+    private emitPublicConfigurations(service:ServiceInfo, ctx) 
+    {
+        if( !service.versions.some(v => !!v.publicPath)) return;
+        
+        let serviceName = service.name.replace('.', '_') + "_public_" + service.port;
+
+        if( !ctx.publicFrontends ) 
+        {
+            ctx.publicFrontends = [
+                "",
+                "frontend public_services",
+                `  bind *:80`,     
+                `  bind *:443`
+            ];
+
+            if (service.scheme) {
+                ctx.publicFrontends.push("  mode " + service.scheme);
+            }
+        }
+        
+        for(let version of service.versions)
+        {    
+            let backend = "backend_" + serviceName + "_" + version.version;
+            if (version.publicPath) 
+            {
+                if(version.publicPath[0] === '/')
+                    version.publicPath = version.publicPath.substr(1);
+                let acl = backend + "_public_acl";
+                ctx.publicFrontends.push("  acl " + acl + " path_beg /" + version.publicPath);
+                ctx.publicFrontends.push("  use_backend " + backend + " if " + acl);
+            }
+        }
     }
 }
