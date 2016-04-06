@@ -18,7 +18,6 @@ import {Options} from './options'
 import * as fs from 'fs'
 import * as Path from 'path'
 import * as Url from 'url'
-import * as os from 'os'
 var Docker = require('dockerode');
 
 export interface IRunner 
@@ -87,7 +86,7 @@ export class Discover
         this.docker = new Docker(opts);
     }
     
-    start(runner:IRunner) 
+    start(runner:IRunner, panic) 
     {
         let emitter = new DockerEvents({docker: this.docker});
         
@@ -96,6 +95,11 @@ export class Discover
         emitter.on("stop", message => runner.serviceRemoved( message.id ) );
         emitter.on("kill", message => runner.serviceRemoved( message.id ) );
         emitter.on("destroy", message => runner.serviceRemoved( message.id ) );
+        emitter.on("error", (err) => { 
+            console.log("Error on listening docker events : " + err);
+            emitter.stop(); 
+            panic(err);
+        });
         
         emitter.start();
         console.log("Listening on docker events...");
@@ -123,7 +127,7 @@ export class Discover
     {
         try 
         {
-            let container = <ContainerInfo>{id:data.Id, ports:[], host:os.hostname()};
+            let container = <ContainerInfo>{id:data.Id, ports:[], host: this.options.hostName};
             let image = await this.inspectImageAsync(data.Image);
             if(image) {
                 container.image = image.RepoTags && image.RepoTags.length > 0 && image.RepoTags[0];
@@ -135,7 +139,7 @@ export class Discover
                 if(labels)
                     this.extractLabels(container, labels);
                     
-                if( container.name && container.version) 
+                if( container.name && container.version)
                 {
                     let containerIp = data.NetworkSettings.Networks["net-" + this.options.cluster] && data.NetworkSettings.Networks["net-" + this.options.cluster].IPAddress;
                     if( data.NetworkSettings && data.NetworkSettings.Ports) // event
@@ -170,11 +174,11 @@ export class Discover
         {
             for (let bind of ports)
             {             
-                if(bind.Type !== "tcp" || !bind.PublicPort) continue;
+                if(bind.Type !== "tcp") continue;
                 container.ports.push( {
                     port: bind.PrivatePort,
                     localIP: containerIP,
-                    boundedPort: bind.PublicPort, 
+                    boundedPort: bind.PublicPort || bind.PrivatePort, 
                     ip: (bind.IP !== "0.0.0.0" && bind.IP) || containerIP
                 });
             }
@@ -195,16 +199,13 @@ export class Discover
                     continue;
                     
                 let bind = ports[prop];
-                if (bind && bind.length > 0)
-                {
-                    let port = parseInt( parts[0] );
-                    container.ports.push( {
-                        port: port, 
-                        localIP: containerIP,
-                        boundedPort: bind[0].HostPort, 
-                        ip: (bind[0].HostIp !== "0.0.0.0" && bind[0].HostIp) || containerIP
-                    });
-                }
+                let port = parseInt( parts[0] );
+                container.ports.push( {
+                    port: port, 
+                    localIP: containerIP,
+                    boundedPort: (bind && bind[0].HostPort) || port, 
+                    ip: (bind && bind[0].HostIp !== "0.0.0.0" && bind[0].HostIp) || containerIP
+                });            
             }
         }
     }

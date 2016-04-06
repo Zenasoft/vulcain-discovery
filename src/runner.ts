@@ -15,9 +15,8 @@
 /// <reference path="../typings/rx/rx.d.ts" />
 /// <reference path="../typings/rx/rx-lite.d.ts" />
 import {Discover, IRunner, ContainerInfo} from './discover'
-import {ConsulReporter} from './consulReporter'
-import {EtcdReporter} from './etcdReporter'
-import {IReporter} from './reporter'
+import {EtcdProvider} from './etcdProvider'
+import {Reporter} from './reporter'
 import {Template} from './template'
 import {Options} from './options'
 import * as Util from 'util'
@@ -28,7 +27,7 @@ import * as events from 'events';
 export class Runner implements IRunner 
 {
     private discover:Discover;
-    private reporter: IReporter;
+    private reporter: Reporter;
     private localServices : Map<string, ContainerInfo>;
     private runtimeQueue;
     private defQueue;
@@ -43,15 +42,18 @@ export class Runner implements IRunner
         this.localServices = new Map<string, ContainerInfo>();
         this.discover = new Discover(options, this);
         
-        this.createReporter();
+        this.reporter = new Reporter(options, this.panic.bind(this));
     }
     
     private panic(err) 
     {
         if(this.restarting) return;
         this.restarting = true;
+        this.reporter.stop = true;
+        
         console.log("*** " + (err.stack||err));
         console.log("*** Restarting in 30 secondes ...");
+        
         let self = this;
         setTimeout(function() 
         {
@@ -60,24 +62,8 @@ export class Runner implements IRunner
         }, 30000);        
     }
     
-    private createReporter() 
-    {
-        if(this.options.kv && this.options.kv.startsWith("consul://")) {
-            this.options.kv = this.options.kv.substr("consul://".length);
-            this.reporter = new ConsulReporter(this.options, this.panic.bind(this));
-        }
-        else if(this.options.kv && this.options.kv.startsWith("etcd://")) {
-            this.options.kv = this.options.kv.substr("etcd://".length);
-            throw "notimplemented";
-            //this.reporter = new EtcdReporter(this.options, this.panic.bind(this));            
-        }
-        else {
-            this.reporter = new ConsulReporter(this.options, this.panic.bind(this));         
-        }
-    }
-    
     /**
-     * Start by inpecting containers of the current host
+     * Start by inspecting containers of the current host
      */
     async startAsync() 
     {    
@@ -87,7 +73,7 @@ export class Runner implements IRunner
             console.log("Proxy address is " + this.clusterProxyAddress);
             
 //            await this.reporter.removeServicesAsync();
-            this.discover.start(this);            
+            this.discover.start(this, this.panic.bind(this));            
             await this.reporter.startAsync();
             
             // Inspect local containers, update kv
@@ -107,15 +93,14 @@ export class Runner implements IRunner
                 .debounce(this.options.refresh*1000)
                 .subscribe(this.refreshLocalAsync.bind(this)); 
  
-            this.reporter.watchRuntimeChanges(this.runtimeQueue);
-            this.reporter.watchDefinitionsChanges(this.defQueue);
+            this.reporter.watchChanges(this.runtimeQueue, this.defQueue);
             
             // Notify other agents
             await this.reporter.notifyRuntimeChangedAsync();
        }
-        catch(e) {
-            this.panic(e);
-        }
+       catch(e) {
+           this.panic(e);
+       }
     }
     
     async refreshLocalAsync() 
@@ -202,7 +187,8 @@ export class Runner implements IRunner
             if(container) {
                 this.localServices.delete(id);
                 await this.reporter.removeServiceAsync(container);
-                Util.log(`Service ${container.name} version ${container.version} removed (id=${id})`);            
+                Util.log(`Service ${container.name} version ${container.version} removed (id=${id})`);   
+                await this.reporter.notifyRuntimeChangedAsync();         
             }
         }
         catch(e) {
@@ -243,7 +229,7 @@ export class Runner implements IRunner
                 
                 let version = service.versions.find(v=>v.version===container.version);
                 if(!version) {
-                    version = {instances:[], version:container.version, publicPath:container.publicPath, balance:container.balance, check:container.check}
+                    version = {instances:[], version:container.version, balance:container.balance, check:container.check}
                     // Insert in order (ascending)
                     let idx = service.versions.findIndex(v=>v.version>version.version);
                     if(idx < 0) idx = service.versions.length;

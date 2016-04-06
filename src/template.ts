@@ -27,7 +27,6 @@ export interface VersionInfo
     balance:string;
     check:string;
     instances: Array<ContainerInfo>;
-    publicPath:string;
 }
 
 export interface ServiceInfo
@@ -168,7 +167,10 @@ export class Template
             ctx.backends.push("");
             ctx.backends.push("backend " + backend);
             ctx.backends.push("  balance " + (version.balance || "roundrobin"));
-                                                
+            if (service.scheme) {
+                ctx.backends.push("  mode " + service.scheme);
+            }
+                                                            
             version.instances.forEach(instance => 
             {
                 instance.ports.forEach(pdef=>
@@ -178,11 +180,21 @@ export class Template
         }
     }
     
+    private getPublicPath(version: VersionInfo) {
+        let publicPath = version.instances && version.instances.length > 0 && version.instances[0].publicPath;
+        if( publicPath) {
+            // trim
+            if(publicPath[0] === '/')
+                publicPath = publicPath.substr(1);
+        }
+        return publicPath;
+    }
+    
     private emitPublicConfigurations(service:ServiceInfo, ctx) 
     {
-        if( !service.versions.some(v => !!v.publicPath)) return;
+        if( !service.versions.some(v => this.getPublicPath(v) !== null)) return;
         
-        let serviceName = service.name.replace('.', '_') + "_public_" + service.port;
+        let serviceName = service.name.replace('.', '_') + "_" + service.port;
 
         if( !ctx.publicFrontends ) 
         {
@@ -201,12 +213,11 @@ export class Template
         for(let version of service.versions)
         {    
             let backend = "backend_" + serviceName + "_" + version.version;
-            if (version.publicPath) 
+            let publicPath = this.getPublicPath(version);
+            if (publicPath) 
             {
-                if(version.publicPath[0] === '/')
-                    version.publicPath = version.publicPath.substr(1);
                 let acl = backend + "_public_acl";
-                ctx.publicFrontends.push("  acl " + acl + " path_beg /" + version.publicPath);
+                ctx.publicFrontends.push("  acl " + acl + " path_reg ^/" + publicPath + "[?\\#]|^/" + publicPath + "$");
                 ctx.publicFrontends.push("  use_backend " + backend + " if " + acl);
             }
         }

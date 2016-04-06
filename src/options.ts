@@ -40,5 +40,7 @@ export class Options
     configFileName:string;
     @Argument({name:"proxy-address", description:"Proxy address", defaultValue:null})
     proxy:string;
+    
     version:string;
+    hostName:string;
 }

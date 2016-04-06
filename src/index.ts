@@ -2,8 +2,9 @@
 import {Options} from './options'
 import {Runner} from './runner'
 import {Parser} from './flags'
+import * as os from 'os'
 
-const version = "1.0.0-beta20";
+const version = "1.0.0-beta21";
 console.log("Service discover - Version " + version);
 
 let parser = new Parser("vulcain-discovery", "service discovery - version " + version); 
@@ -17,6 +18,7 @@ if(flags)
     }
     console.log("Cluster : " + flags.cluster);
     flags.version = version;
+    flags.hostName = os.hostname();
     let runner = new Runner(flags);
     runner.startAsync();
     console.log("Running...");
