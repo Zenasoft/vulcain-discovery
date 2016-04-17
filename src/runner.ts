@@ -196,54 +196,64 @@ export class Runner implements IRunner
         }
     }
     
-    // container {id, version, name, port} -> service(name)/version(version)/[id]
     private async onRuntimeChanged() 
     {      
-        let containers = await this.reporter.getRuntimeServicesAsync();
-        if(this.options.debug)
-            Util.log(`onRuntimeChanged with ${containers.length} containers`);
-            
         if(this.restarting) {
             Util.log("Ignore changes, pending restart...");
             return;
         }
+        
+        let containers = await this.reporter.getRuntimeServicesAsync();
+        if(this.options.debug)
+            Util.log(`onRuntimeChanged with ${containers.length} containers`);
+    
+        this.changes++;        
+        let services = new Map<string,ServiceInfo>();
+        let cx=0;
+       
         try 
-        {
-            this.changes++;
-            
-            // Aggregate container by service/versions/containers
-            let services = new Map<string,ServiceInfo>();
-            let cx=0;
-            for(let kv of containers) 
+        { 
+            let cluster = await this.reporter.getClusterDefinitionAsync();
+            if(cluster ) 
             {
-                if(kv.Key.split("/").length === 5) continue; // refresh
-                let container = <ContainerInfo>JSON.parse(kv.Value);        
-                if(!container) continue;
-                
-                let service = services.get(container.name);
-                if(!service)
-                {
-                    service = {name:container.name, versions:[], port:container.port, scheme:container.scheme};
-                    services.set(container.name, service);
+                cluster.proxyAddress = this.clusterProxyAddress;
+                if(this.options.proxyMode === "dev") {
+                    cluster.httpAddress = "*";
+                    cluster.httpsAddress = "*";
                 }
-                
-                let version = service.versions.find(v=>v.version===container.version);
-                if(!version) {
-                    version = {instances:[], version:container.version, balance:container.balance, check:container.check}
-                    // Insert in order (ascending)
-                    let idx = service.versions.findIndex(v=>v.version>version.version);
-                    if(idx < 0) idx = service.versions.length;
-                    service.versions.splice(idx, 0, version);                
-               }
-                
-                version.instances.push(container);
-                cx++;
+                        
+                // Aggregate container by service/versions/containers
+                for(let kv of containers) 
+                {
+                    if(kv.Key.split("/").length === 5) continue; // refresh
+                    let container = <ContainerInfo>JSON.parse(kv.Value);        
+                    if(!container) continue;
+                    
+                    let service = services.get(container.name);
+                    if(!service)
+                    {
+                        service = {name:container.name, versions:[], port:container.port, scheme:container.scheme};
+                        services.set(container.name, service);
+                    }
+                    
+                    let version = service.versions.find(v=>v.version===container.version);
+                    if(!version) {
+                        version = {instances:[], version:container.version, balance:container.balance, check:container.check}
+                        // Insert in order (ascending)
+                        let idx = service.versions.findIndex(v=>v.version>version.version);
+                        if(idx < 0) idx = service.versions.length;
+                        service.versions.splice(idx, 0, version);                
+                    }
+                    
+                    version.instances.push(container);
+                    cx++;                
+                }
             }
             
             // Notify template 
             let template = new Template(this.options);
             Util.log(`Generating template file with ${services.size} services (${cx} instances)`);
-            await template.transformAsync(this.clusterProxyAddress, Array.from(services.values()));
+            await template.transformAsync(cluster, Array.from(services.values()));
         }
         catch(err) {
             this.panic(err);          

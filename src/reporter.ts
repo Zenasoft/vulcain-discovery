@@ -18,6 +18,13 @@ import {ConsulProvider} from './consulProvider'
 import {EtcdProvider} from './etcdProvider'
 import * as os from 'os'
 
+export interface ClusterDefinition {
+    name: string;
+    httpAddress: string;
+    httpsAddress: string;
+    proxyAddress?: string;
+}
+
 export interface ServicePortDefinition 
 {
     port:number;
@@ -99,26 +106,30 @@ export class Reporter
         let self = this;
         await this.provider.createSessionAsync();
         
-        // Start the session renew process
-        setTimeout( this.renewAsync.bind(this), this.options.ttl*1000/2);
-        
         // Register host
         let hostDefinition = 
         {
             name: this.options.hostName, 
             ip:this.options.hostIp, 
-            platform: os.type(), 
             cluster:this.options.cluster,
-            memory: os.totalmem(),
-            infos: [
-                {"discovery" : this.options.version}
-            ]
+            infos: {
+                "platform": os.type(),
+                "memory": os.totalmem() / 1024,
+                "discovery" : this.options.version,
+                "arch": os.arch(),
+                "release" : os.release,
+                "speed": os.cpus()[0].speed / 1000,
+                "cpus": os.cpus().length
+            }
         }; 
                 
         // Register host
         await this.provider.setAsync(this.hostKey,JSON.stringify(hostDefinition));
+        
+        // Start the session renew process
+        setTimeout( this.renewAsync.bind(this), this.options.ttl*1000/2);
     }
-    
+   
     watchChanges(runtimeQueue, defQueue) 
     {
         // Listening on changes in service definitions via webadmin
@@ -126,7 +137,7 @@ export class Reporter
         this.rw = this.provider.watchChanges(`vulcain/${this.options.cluster}/runtime/services/refresh`, runtimeQueue, true, this.panic.bind(this));
       
         // Listening on runtime changes updated by discovery agent (local or remote).
-        // We don't know which agent initiate the changes so we re read all services 
+        // We don't know which agent initiate the changes so we will read all services 
         this.dw = this.provider.watchChanges(`vulcain/${this.options.cluster}/definitions/services/refresh`, defQueue, false, this.panic.bind(this));
     }
     
@@ -158,13 +169,22 @@ export class Reporter
             console.log(">> Service registered into kv store " + service.id ); 
     }
     
-    notifyRuntimeChangedAsync() 
+    notifyRuntimeChangedAsync()
     {
         return this.provider.setAsync(`vulcain/${this.options.cluster}/runtime/services/refresh`, Date.now().toString(), false); 
     }
     
     getRuntimeServicesAsync() {
         return this.provider.getAsync(`vulcain/${this.options.cluster}/runtime/services`, true);
+    }
+    
+    async getClusterDefinitionAsync() : Promise<ClusterDefinition> {
+        let key = `vulcain/definitions/clusters/${this.options.cluster}`;
+        let data = await this.provider.getAsync(key);
+        let result = data && JSON.parse(data.Value);
+        if(this.options.debug) 
+            console.log("Read data key=%s value=%j", key, result);
+        return result;                
     }
     
     async getServiceDefinitionAsync(name:string) : Promise<ServiceDefinition> {

@@ -19,7 +19,7 @@ import * as fs from 'fs'
 import * as childProcess from 'child_process'
 import * as http from 'http'
 import * as crypto from 'crypto'
-import {ConfigDefinition} from './reporter'
+import {ConfigDefinition, ClusterDefinition} from './reporter'
 
 export interface VersionInfo
 {
@@ -62,7 +62,7 @@ export class Template
 
 // see https://github.com/tutumcloud/haproxy
 //     https://serversforhackers.com/load-balancing-with-haproxy
-    transformAsync(proxyAddress:string, services:Array<ServiceInfo> )
+    transformAsync(cluster:ClusterDefinition, services:Array<ServiceInfo> )
     {        
         let self = this;
         return new Promise((resolve, reject) => {
@@ -82,9 +82,9 @@ export class Template
                     {        
                         // dev expose all services with no binding address
                         if( self.options.proxyMode !== 'public' || self.options.proxyMode === 'dev')
-                            self.emitPrivateConfigurations(service, self.options.proxyMode === 'public' && proxyAddress, ctx);                         
+                            self.emitPrivateConfigurations(service, self.options.proxyMode === 'public' && cluster.proxyAddress, ctx);                         
                         if( self.options.proxyMode !== 'private' && self.options.proxyMode !== 'dev')
-                            self.emitPublicConfigurations(service, ctx);
+                            self.emitPublicConfigurations(service, cluster, ctx);
                         self.emitBackends(service, ctx);
                     }
                 
@@ -190,35 +190,56 @@ export class Template
         return publicPath;
     }
     
-    private emitPublicConfigurations(service:ServiceInfo, ctx) 
+    private emitPublicConfigurations(service:ServiceInfo, cluster: ClusterDefinition, ctx) 
     {
         if( !service.versions.some(v => this.getPublicPath(v) !== null)) return;
         
         let serviceName = service.name.replace('.', '_') + "_" + service.port;
 
-        if( !ctx.publicFrontends ) 
+        if( !ctx.publicFrontends && (cluster.httpAddress || cluster.httpsAddress)) 
         {
             ctx.publicFrontends = [
                 "",
-                "frontend public_services",
-                `  bind *:80`,     
-                `  bind *:443`
+                "frontend public_services"
             ];
+            
+            let http = cluster.httpAddress && cluster.httpAddress.split(':');
+            let https = cluster.httpsAddress && cluster.httpsAddress.split(':');
+            
+            if(cluster.httpAddress) {
+                if(http.length === 1)
+                    http.push("80");
+                ctx.publicFrontends.push(`  bind :${http[1]}`);               
+            }
+            
+            if(cluster.httpsAddress) {
+                if(https.length === 1)
+                    https.push("443");
+                ctx.publicFrontends.push(`  bind :${https[1]}`);
+            }
 
             if (service.scheme) {
                 ctx.publicFrontends.push("  mode " + service.scheme);
             }
-        }
-        
-        for(let version of service.versions)
-        {    
-            let backend = "backend_" + serviceName + "_" + version.version;
-            let publicPath = this.getPublicPath(version);
-            if (publicPath) 
-            {
-                let acl = backend + "_public_acl";
-                ctx.publicFrontends.push("  acl " + acl + " path_reg ^/" + publicPath + "[?\\#]|^/" + publicPath + "$");
-                ctx.publicFrontends.push("  use_backend " + backend + " if " + acl);
+                   
+            let domainAcl = cluster.name + "_host "; // keep ending space 
+            if(http) {
+                ctx.publicFrontends.push(`  acl ${domainAcl} hdr_beg(host) -i ${http[0]}`);
+            }
+            if(https) {
+                ctx.publicFrontends.push(`  acl ${domainAcl} hdr_beg(host) -i ${https[0]}`);
+            }
+            
+            for(let version of service.versions)
+            {    
+                let backend = "backend_" + serviceName + "_" + version.version;
+                let publicPath = this.getPublicPath(version);
+                if (publicPath) 
+                {
+                    let acl = backend + "_public_acl";
+                    ctx.publicFrontends.push("  acl " + acl + " path_reg ^/" + publicPath + "[?\\#]|^/" + publicPath + "$");
+                    ctx.publicFrontends.push("  use_backend " + backend + " if " + domainAcl + acl);
+                }
             }
         }
     }

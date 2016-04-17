@@ -80,7 +80,7 @@ export class Discover
             };
         }
         
-        console.log("Starting docker observer on " + (this.options.dockerAddress || this.options.hostIp || "docker.sock"));
+        console.log("Starting docker observer on " + (this.options.dockerAddress || "docker.sock"));
         
         // Create docker client
         this.docker = new Docker(opts);
@@ -289,6 +289,7 @@ export class Discover
         });
     }
     
+    
     findProxyAddressAsync() 
     {
         const self = this;
@@ -297,13 +298,14 @@ export class Discover
         
         return new Promise<string>((resolve,reject) => 
         {
-            // Find cluster network
+            // Find private cluster network
             self.docker.listNetworks((err, networks:Array<any>) => 
             {
                 let addr=null;
                 let network = !err && networks.find(n=>n.Name===networkName);
                 if(network)
                 {
+                    // Search for local-proxy
                     for(var id in network.Containers)
                     {
                         let container = network.Containers[id];

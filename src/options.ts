@@ -16,7 +16,7 @@ import {DefaultArgument, Argument, Verb, Section} from './flags'
 
 export class Options 
 {
-    @Argument({name:"services-advertise", description:"Address used to exposed service", defaultValue:null})    
+    @Argument({name:"addr", description:"Address used to exposed service", defaultValue:null})    
     hostIp:string;
     @Argument({name:"ttl", description:"Session time to live in seconds (default 30)", defaultValue:30})
     ttl:number;
