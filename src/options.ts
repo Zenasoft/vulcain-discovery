@@ -34,10 +34,6 @@ export class Options
     refresh:number;
     @Argument({name:"proxy-mode", description:"Service exposition (public|private|all|dev).", defaultValue:"private"})
     proxyMode:string;
-    @Argument({name:"template", description:"TemplateFileName", defaultValue:"haproxy.tpl"})
-    templateFileName:string;
-    @Argument({name:"target-file", description:"Config file name", defaultValue:"/var/haproxy/haproxy.cfg"})
-    configFileName:string;
     @Argument({name:"proxy-address", description:"Proxy address", defaultValue:null})
     proxy:string;
     

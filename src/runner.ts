@@ -149,7 +149,7 @@ export class Runner implements IRunner
             if(this.restarting) return;
             
             // Target another specific cluster ?
-            if( container.cluster && container.cluster.toLowerCase() !== this.options.cluster.toLowerCase())
+            if( !container.cluster || container.cluster.toLowerCase() !== this.options.cluster.toLowerCase())
                 return;
                 
             // Is it a valid and enabled version ?
@@ -202,7 +202,8 @@ export class Runner implements IRunner
             Util.log("Ignore changes, pending restart...");
             return;
         }
-        
+
+    //    let globals = await this.reporter.getGlobalServicesAsync();        
         let containers = await this.reporter.getRuntimeServicesAsync();
         if(this.options.debug)
             Util.log(`onRuntimeChanged with ${containers.length} containers`);

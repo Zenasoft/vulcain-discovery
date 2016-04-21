@@ -10,7 +10,6 @@ RUN npm install --production && \
     rm -rf node_modules/rx/ts && rm node_modules/rx/dist/*.min.js && rm node_modules/rx/dist/*.map \
     rm -rf node_modules/reflect-metadata/spec && rm -rf node_modules/reflect-metadata/test && rm -rf node_modules/reflect-metadata/temp
     
-COPY haproxy.tpl /app
 COPY lib /app
 
 ENTRYPOINT ["node", "index.js"]

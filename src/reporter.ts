@@ -187,6 +187,12 @@ export class Reporter
         return result;                
     }
     
+    async getGlobalServicesAsync() : Promise<Array<ServiceDefinition>> {
+        let key = `vulcain/${this.options.cluster}/definitions/globalServices/${name}`;
+        let data = await this.provider.getAsync(key);
+        return data.map(kv=>JSON.parse(kv.Value));              
+    }
+    
     async getServiceDefinitionAsync(name:string) : Promise<ServiceDefinition> {
         let key = `vulcain/${this.options.cluster}/definitions/services/${name}`;
         let data = await this.provider.getAsync(key);

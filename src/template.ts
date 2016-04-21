@@ -67,15 +67,7 @@ export class Template
         let self = this;
         return new Promise((resolve, reject) => {
             try
-            {
-                fs.readFile(this.options.templateFileName, 'utf8', function (err, data)
-                {
-                    if (err)
-                    {
-                        reject(err);
-                        return;
-                    }
-                        
+            {                        
                     let ctx = {frontends:[], backends:[], publicFrontends:null};
                     
                     for(let service of services) 
@@ -88,37 +80,38 @@ export class Template
                         self.emitBackends(service, ctx);
                     }
                 
-                    var newConfig = data + ctx.frontends.join('\n');
+                    var newConfig = ctx.frontends.join('\n');
                     if(ctx.publicFrontends)
                         newConfig += ctx.publicFrontends.join('\n');
                     newConfig += ctx.backends.join('\n');    
-                    if(self.options.debug)
-                        console.log(self.options.configFileName + " -> " + newConfig);
-                    
+                    let configFileName = "/var/haproxy/" + this.options.cluster + ".cfg";
+
                     //resolve(true);return;
-                    
-                    fs.writeFile(self.options.configFileName, newConfig, function (err)
-                    {
-                        if (err)
+                    if( !newConfig) {
+                        fs.exists(configFileName, (exists) => {
+                            if(exists) {
+                                fs.unlink(configFileName, (err) =>
+                                {
+                                    if(self.options.debug)
+                                        console.log("File removed : " + configFileName);
+                                    self.onCompleted(resolve, reject, err);
+                                });
+                            }
+                            else
+                            {
+                                self.onCompleted(resolve, reject, null);
+                            }
+                        });
+                    }
+                    else {
+                        fs.writeFile(configFileName, newConfig, (err) =>
                         {
-                            reject(err);
-                            return;
-                        }
-                        else {
-                            try {
-                                // Notify proxy 
-                                http.get(self.proxyGetOptions, function(resp) {
-                                    resolve(true);
-                                    //if(resp.statusCode == 200) {self.firstTime=false; self.lastHashCode = hash;}
-                                })
-                                .on("error", err => {reject(err)});
-                            }
-                            catch(ex) {
-                                reject(ex);
-                            }
-                        }
-                    });
-                });
+                            if(self.options.debug)
+                                console.log(configFileName + " -> " + newConfig);
+                    
+                            self.onCompleted(resolve, reject, err);
+                        });
+                    }
             }
             catch(e) {
                 reject(e);
@@ -126,14 +119,37 @@ export class Template
         });
     }
     
+    private onCompleted(resolve, reject, err) {
+        if (err)
+        {
+            reject(err);
+        }
+        else {
+            try {
+                if(this.options.debug)
+                    console.log("Notify proxy");
+                                    
+                // Notify proxy 
+                http.get(this.proxyGetOptions, function(resp) {
+                    resolve(true);
+                    //if(resp.statusCode == 200) {self.firstTime=false; self.lastHashCode = hash;}
+                })
+                .on("error", err => {reject(err)});
+            }
+            catch(ex) {
+                reject(ex);
+            }
+        }
+    }
+    
     private emitPrivateConfigurations(service, proxyAddress, ctx) 
     {
-        let serviceName = service.name.replace('.', '_') + "_" + service.port;
+        let serviceName = this.options.cluster + "_" + service.name.replace('.', '_') + "_" + service.port;
 
         ctx.frontends = ctx.frontends.concat([
             "",
             "frontend " + serviceName,
-            `  bind ${proxyAddress||"*"}:${service.port}`     
+            `  bind ${proxyAddress||"*"}:${service.port}`    
             //`  bind *:${service.port}`
         ]);
 
@@ -159,7 +175,7 @@ export class Template
     
     private emitBackends(service, ctx) 
     {
-        let serviceName = service.name.replace('.', '_') + "_" + service.port;
+        let serviceName = this.options.cluster + "_" + service.name.replace('.', '_') + "_" + service.port;
 
         for(let version of service.versions)
         {    
@@ -194,13 +210,13 @@ export class Template
     {
         if( !service.versions.some(v => this.getPublicPath(v) !== null)) return;
         
-        let serviceName = service.name.replace('.', '_') + "_" + service.port;
+        let serviceName = this.options.cluster + "_" + service.name.replace('.', '_') + "_" + service.port;
 
         if( !ctx.publicFrontends && (cluster.httpAddress || cluster.httpsAddress)) 
         {
             ctx.publicFrontends = [
                 "",
-                "frontend public_services"
+                "frontend " + this.options.cluster + "_public_services"
             ];
             
             let http = cluster.httpAddress && cluster.httpAddress.split(':');

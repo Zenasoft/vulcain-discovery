@@ -56,11 +56,11 @@ export class Discover
     private docker : Docker;
     private static Label_Prefix = "vulcain."; 
     private static Label_ServiceName =  Discover.Label_Prefix + "servicename";
-    private static Label_ClusterName =  Discover.Label_Prefix + "clustername";
+    private static Label_ClusterName =  Discover.Label_Prefix + "cluster";
     private static Label_Version = Discover.Label_Prefix + "version";
     private static Label_Info = Discover.Label_Prefix + "info";
         
-    constructor(private options:Options, runner:IRunner) 
+    constructor(private options:Options,  runner:IRunner)
     {
         let opts;
         let dockerUrl = Url.parse((this.options.dockerAddress && this.options.dockerAddress.startsWith("tcp://") ? "" : "tcp://") + (this.options.dockerAddress || this.options.hostIp));
