@@ -49,7 +49,7 @@ export class Runner implements IRunner
     {
         if(this.restarting) return;
         this.restarting = true;
-        this.reporter.stop = true;
+       // this.reporter.stop = true;
         
         console.log("*** " + (err.stack||err));
         console.log("*** Restarting in 30 secondes ...");
@@ -161,7 +161,7 @@ export class Runner implements IRunner
             
                 container.balance = vdef.balance || def.balance;
                 container.scheme = vdef.scheme || def.scheme;
-                container.check  = vdef.check || def.check;
+                container.check = vdef.check || def.check;                
                 container.port = def.port;
                 container.address = `${this.clusterProxyAddress}:${def.port}`;
                 container.publicPath = vdef.publicPath;

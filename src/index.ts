@@ -12,6 +12,10 @@ let flags = parser.run<Options>(new Options());
 
 if(flags) 
 {
+    if (!flags.cluster) {
+        console.log("Cluster argument is required.");
+        process.exit(1);
+    }
     if( ['private', 'public', 'all', 'dev'].indexOf(flags.proxyMode) < 0) {
         console.log("Invalid proxyMode argument.");
         process.exit(1);

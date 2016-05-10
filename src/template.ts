@@ -73,9 +73,9 @@ export class Template
                     for(let service of services) 
                     {        
                         // dev expose all services with no binding address
-                        if( self.options.proxyMode !== 'public' || self.options.proxyMode === 'dev')
+                        if( self.options.proxyMode !== 'public' )
                             self.emitPrivateConfigurations(service, self.options.proxyMode === 'public' && cluster.proxyAddress, ctx);                         
-                        if( self.options.proxyMode !== 'private' && self.options.proxyMode !== 'dev')
+                        if( self.options.proxyMode !== 'private' )
                             self.emitPublicConfigurations(service, cluster, ctx);
                         self.emitBackends(service, ctx);
                     }
@@ -179,6 +179,7 @@ export class Template
 
         for(let version of service.versions)
         {    
+            let check="";
             let backend = "backend_" + serviceName + "_" + version.version;
             ctx.backends.push("");
             ctx.backends.push("backend " + backend);
@@ -186,11 +187,16 @@ export class Template
             if (service.scheme) {
                 ctx.backends.push("  mode " + service.scheme);
             }
-                                                            
+            // At this time, only url check is supported
+            if (version.check) {
+             //   ctx.backends.push("  option httpchk get " + version.check);
+                check = " check"; // don't remove space
+            }
+            
             version.instances.forEach(instance => 
             {
                 instance.ports.forEach(pdef=>
-                    ctx.backends.push("  server server_" + instance.id + "_" + pdef.boundedPort + " " + pdef.ip + ":" + pdef.port + " " + (instance.check || ""))
+                    ctx.backends.push("  server server_" + instance.id + "_" + pdef.boundedPort + " " + pdef.ip + ":" + pdef.port + check)
                 );
             });
         }
