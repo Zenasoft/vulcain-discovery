@@ -4,7 +4,7 @@ import {Runner} from './runner'
 import {Parser} from './flags'
 import * as os from 'os'
 
-const version = "1.0.0-beta25";
+const version = "1.0.0-beta26";
 console.log("Service discover - Version " + version);
 
 let parser = new Parser("vulcain-discovery", "service discovery - version " + version); 
@@ -20,6 +20,7 @@ if(flags)
         console.log("Invalid proxyMode argument.");
         process.exit(1);
     }
+    
     console.log("Cluster : " + flags.cluster);
     flags.version = version;
     flags.hostName = os.hostname();

@@ -57,8 +57,8 @@ export class Runner implements IRunner
         let self = this;
         setTimeout(function() 
         {
-            if(self.restarting)
-                process.exit(1);
+            console.log(">>>> Restarting <<<<");
+            process.exit(1);
         }, 30000);        
     }
     

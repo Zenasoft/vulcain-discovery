@@ -28,7 +28,6 @@ export class ConsulProvider implements IProvider
     constructor(private options:Options) 
     {
         this.consul = Consul({ host:options.kv || "local-store"});  
-        console.log("Starting consul reporter on " + (options.kv || "local-store"));
     }
 
     setAsync(key:string, value, lock?:boolean) 
@@ -121,15 +120,11 @@ export class ConsulProvider implements IProvider
     renewSessionAsync() 
     {
         return new Promise((resolve, reject) => 
-        {
-           if(this.options.debug)
-                util.log(">> Renew session " + this.sessionId );
-            
+        {            
             try {
                 this.consul.session.renew(this.sessionId, (err,data) => {
                     if(err) {
-                        if(this.options.debug)
-                            util.log("Renew failed " + err);
+                        util.log("Renew failed " + err);
                         reject(err);
                     }
                     else {
