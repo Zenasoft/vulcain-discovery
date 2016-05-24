@@ -15,7 +15,6 @@
 /// <reference path="../typings/rx/rx.d.ts" />
 /// <reference path="../typings/rx/rx-lite.d.ts" />
 import {Discover, IRunner, ContainerInfo} from './discover'
-import {EtcdProvider} from './etcdProvider'
 import {Reporter} from './reporter'
 import {Template} from './template'
 import {Options} from './options'
@@ -72,14 +71,14 @@ export class Runner implements IRunner
             this.clusterProxyAddress = await this.discover.findProxyAddressAsync();
             console.log("Proxy address is " + this.clusterProxyAddress);
             
-//            await this.reporter.removeServicesAsync();
-            this.discover.start(this, this.panic.bind(this));            
+            this.discover.start(this, this.panic.bind(this));       
+            
             await this.reporter.startAsync();
             
             // Inspect local containers, update kv
             Util.log("Inspecting local containers.");
             let containers =  await this.discover.listContainersAsync();
-            containers.forEach(async (container:ContainerInfo)=> 
+            containers.forEach(async (container:ContainerInfo) => 
             {
                 if(container)
                     await this.addService(container);
@@ -166,7 +165,7 @@ export class Runner implements IRunner
                 container.address = `${this.clusterProxyAddress}:${def.port}`;
                 container.publicPath = vdef.publicPath;
             }
-            
+   
             // OK, service can be registered
             await this.reporter.registerServiceAsync(container);
             this.localServices.set(container.id, container);

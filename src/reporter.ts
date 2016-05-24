@@ -15,7 +15,7 @@
 import {ContainerInfo} from './discover'
 import {Options} from './options'
 import {ConsulProvider} from './consulProvider'
-import {EtcdProvider} from './etcdProvider'
+//import {EtcdProvider} from './etcdProvider'
 import * as os from 'os'
 
 export interface ClusterDefinition {
@@ -90,9 +90,10 @@ export class Reporter
             this.options.kv = this.options.kv.substr("consul://".length);
             this.provider = new ConsulProvider(this.options);
         }
-        else if(this.options.kv && this.options.kv.startsWith("etcd://")) {
-            this.options.kv = this.options.kv.substr("etcd://".length);
-            this.provider = new EtcdProvider(this.options);            
+        else if (this.options.kv && this.options.kv.startsWith("etcd://")) {
+            throw "Etcd not supported";
+            //this.options.kv = this.options.kv.substr("etcd://".length);
+            //this.provider = new EtcdProvider(this.options);            
         }
         else {
             this.provider = new ConsulProvider(this.options);         

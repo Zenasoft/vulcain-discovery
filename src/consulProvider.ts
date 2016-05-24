@@ -36,7 +36,7 @@ export class ConsulProvider implements IProvider
             lock = true;
             
         if(this.options.debug) {
-            console.log("Set % with lock=" + lock, key);
+            console.log("Set %s with lock=" + lock, key);
         }
         return new Promise((resolve, reject) => 
         {

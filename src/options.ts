@@ -30,7 +30,7 @@ export class Options
     dockerAddress:string;
     @Argument({name:"cluster", description:"Cluster name", env:"VULCAIN_CLUSTER"})
     cluster:string;
-    @Argument({name:"refresh", description:"HAProxy configuration reload interval in seconds.", defaultValue:5})
+    @Argument({name:"refresh", description:"HAProxy configuration reload interval in seconds.", defaultValue:10})
     refresh:number;
     @Argument({name:"proxy-mode", description:"Service exposition (public|private|all|dev).", defaultValue:"private"})
     proxyMode:string;
