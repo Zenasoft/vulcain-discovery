@@ -189,10 +189,14 @@ export class Template
             }
             // At this time, only url check is supported
             if (version.check) {
-             //   ctx.backends.push("  option httpchk get " + version.check);
+                ctx.backends.push("  option httpchk get " + version.check);
                 check = " check"; // don't remove space
             }
-            
+            let publicPath = this.getPublicPath(version);
+            if (publicPath) {
+                ctx.backends.push("  reqrep ^([^\\ :]*)\\ /(" + publicPath + ")([?\\#/]+)(.*)   \\1\\ /api\\3\\4");
+            }
+
             version.instances.forEach(instance => 
             {
                 instance.ports.forEach(pdef=>
@@ -212,30 +216,29 @@ export class Template
         return publicPath;
     }
     
-    private emitPublicConfigurations(service:ServiceInfo, cluster: ClusterDefinition, ctx) 
-    {
-        if( !service.versions.some(v => this.getPublicPath(v) !== null)) return;
-        
-        let serviceName = this.options.cluster + "_" + service.name.replace('.', '_') + "_" + service.port;
+    private emitPublicConfigurations(service: ServiceInfo, cluster: ClusterDefinition, ctx) {
+        if (!service.versions.some(v => this.getPublicPath(v) !== null)) return;
 
-        if( !ctx.publicFrontends && (cluster.httpAddress || cluster.httpsAddress)) 
-        {
+        let serviceName = this.options.cluster + "_" + service.name.replace('.', '_') + "_" + service.port;
+        let domainAcl = cluster.name + "_host "; // keep ending space 
+
+        if (!ctx.publicFrontends && (cluster.httpAddress || cluster.httpsAddress)) {
             ctx.publicFrontends = [
                 "",
                 "frontend " + this.options.cluster + "_public_services"
             ];
-            
+
             let http = cluster.httpAddress && cluster.httpAddress.split(':');
             let https = cluster.httpsAddress && cluster.httpsAddress.split(':');
-            
-            if(cluster.httpAddress) {
-                if(http.length === 1)
+
+            if (cluster.httpAddress) {
+                if (http.length === 1)
                     http.push("80");
-                ctx.publicFrontends.push(`  bind :${http[1]}`);               
+                ctx.publicFrontends.push(`  bind :${http[1]}`);
             }
-            
-            if(cluster.httpsAddress) {
-                if(https.length === 1)
+
+            if (cluster.httpsAddress) {
+                if (https.length === 1)
                     https.push("443");
                 ctx.publicFrontends.push(`  bind :${https[1]}`);
             }
@@ -243,25 +246,22 @@ export class Template
             if (service.scheme) {
                 ctx.publicFrontends.push("  mode " + service.scheme);
             }
-                   
-            let domainAcl = cluster.name + "_host "; // keep ending space 
-            if(http) {
+
+            if (http) {
                 ctx.publicFrontends.push(`  acl ${domainAcl} hdr_beg(host) -i ${http[0]}`);
             }
-            if(https) {
+            if (https) {
                 ctx.publicFrontends.push(`  acl ${domainAcl} hdr_beg(host) -i ${https[0]}`);
             }
-            
-            for(let version of service.versions)
-            {    
-                let backend = "backend_" + serviceName + "_" + version.version;
-                let publicPath = this.getPublicPath(version);
-                if (publicPath) 
-                {
-                    let acl = backend + "_public_acl";
-                    ctx.publicFrontends.push("  acl " + acl + " path_reg ^/" + publicPath + "[?\\#]|^/" + publicPath + "$");
-                    ctx.publicFrontends.push("  use_backend " + backend + " if " + domainAcl + acl);
-                }
+        }
+
+        for (let version of service.versions) {
+            let backend = "backend_" + serviceName + "_" + version.version;
+            let publicPath = this.getPublicPath(version);
+            if (publicPath) {
+                let acl = backend + "_public_acl";
+                ctx.publicFrontends.push("  acl " + acl + " path_reg ^/" + publicPath + "[?\\#/]|^/" + publicPath + "$");
+                ctx.publicFrontends.push("  use_backend " + backend + " if " + domainAcl + acl);
             }
         }
     }
