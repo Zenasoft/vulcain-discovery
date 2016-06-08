@@ -33,31 +33,48 @@ export class Runner implements IRunner
     private changes = 0;
     private clusterProxyAddress:string;
     private restarting:boolean;
+    private subscriptions = [];
     
     constructor(private options:Options) 
     {
+        this.initialize();
+    }
+
+    private initialize() {
         this.defQueue = new Rx.Subject();
         this.runtimeQueue = new Rx.Subject();
         this.localServices = new Map<string, ContainerInfo>();
-        this.discover = new Discover(options, this);
-        
-        this.reporter = new Reporter(options, this.panic.bind(this));
+        this.discover = new Discover(this.options, this);       
+        this.reporter = new Reporter(this.options, this.panic.bind(this));        
+    }
+
+    dispose() {
+        this.subscriptions[0] && this.subscriptions[0].dispose();
+        this.subscriptions[1] && this.subscriptions[1].dispose();
+        this.reporter.dispose();
+        this.discover.dispose();        
+    }    
+    
+    async restart() {        
+        this.initialize();
+        this.restarting = false;
+        await this.startAsync();
     }
     
     private panic(err) 
     {
         if(this.restarting) return;
         this.restarting = true;
-       // this.reporter.stop = true;
+        this.dispose();
         
-        console.log("*** " + (err.stack||err));
-        console.log("*** Restarting in 30 secondes ...");
+        Util.log("*** " + (err.stack||err));
+        Util.log("*** Restarting in 30 secondes ...");
         
         let self = this;
         setTimeout(function() 
         {
-            console.log(">>>> Restarting <<<<");
-            process.exit(1);
+            Util.log(">>>> Restarting <<<<");
+            self.restart();
         }, 30000);        
     }
     

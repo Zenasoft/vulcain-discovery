@@ -53,6 +53,7 @@ export interface ContainerInfo {
 
 export class Discover 
 {
+    private emitter;
     private docker : Docker;
     private static Label_Prefix = "vulcain."; 
     private static Label_ServiceName =  Discover.Label_Prefix + "servicename";
@@ -85,23 +86,28 @@ export class Discover
         // Create docker client
         this.docker = new Docker(opts);
     }
+
+    dispose() {
+        this.emitter && this.emitter.stop();
+    }
     
     start(runner:IRunner, panic) 
     {
-        let emitter = new DockerEvents({docker: this.docker});
+        this.emitter = new DockerEvents({docker: this.docker});
         
-        emitter.on("start", message => runner.serviceAdded( message.id ));
-        emitter.on("die",  message => runner.serviceRemoved( message.id ) );
-        emitter.on("stop", message => runner.serviceRemoved( message.id ) );
-        emitter.on("kill", message => runner.serviceRemoved( message.id ) );
-        emitter.on("destroy", message => runner.serviceRemoved( message.id ) );
-        emitter.on("error", (err) => { 
+        this.emitter.on("start", message => runner.serviceAdded( message.id ));
+        this.emitter.on("die",  message => runner.serviceRemoved( message.id ) );
+        this.emitter.on("stop", message => runner.serviceRemoved( message.id ) );
+        this.emitter.on("kill", message => runner.serviceRemoved( message.id ) );
+        this.emitter.on("destroy", message => runner.serviceRemoved( message.id ) );
+        this.emitter.on("error", (err) => { 
             console.log("Error on listening docker events : " + err);
-            emitter.stop(); 
+            this.emitter.stop(); 
+            this.emitter = null;
             panic(err);
         });
         
-        emitter.start();
+        this.emitter.start();
         console.log("Listening on docker events...");
     }
     

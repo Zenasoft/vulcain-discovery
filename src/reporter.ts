@@ -141,6 +141,12 @@ export class Reporter
         // We don't know which agent initiate the changes so we will read all services 
         this.dw = this.provider.watchChanges(`vulcain/${this.options.cluster}/definitions/services/refresh`, defQueue, false, this.panic.bind(this));
     }
+
+    dispose() {
+        this.stop = true;
+        this.rw && this.rw.dispose();
+        this.dw && this.dw.dispose();
+    }
     
     private async renewAsync() 
     {

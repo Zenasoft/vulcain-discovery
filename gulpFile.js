@@ -25,7 +25,7 @@ gulp.task("compile-ts", function ()
         });
 
     var tsResult =
-        tsProject.src('src/**', { base: 'src' })
+        tsProject.src(['src/**/*.ts', 'typings/index.d.ts'], { base: 'src' })
             .pipe(sourcemaps.init())
            // .pipe(insert.prepend('"use strict";'))
             .pipe(ts(tsProject));
@@ -48,12 +48,3 @@ gulp.task("compile-ts", function ()
 });
 
 gulp.task('clean', function(done) { fse.remove('lib', done);});
-
-gulp.task('watch-ts', function () 
-{
-    return gulp.watch('src/**/*.ts', function (files)
-    {
-        console.log("Changes detected. Compiling ts files...");
-        gulp.start('compile-ts'); // run the compile task
-    });
-});

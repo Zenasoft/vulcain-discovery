@@ -141,7 +141,7 @@ export class ConsulProvider implements IProvider
     watchChanges(key:string, queue, recurse:boolean, panic: (err)=>void) 
     {
         let self = this;
-        let ctx = {watch:null};
+        let ctx = { watch: null, dispose: function () { this.watch.end();}};
        
         ctx.watch = this.consul.watch({ method: this.consul.kv.get, options: { recurse:recurse, key: key }});
 

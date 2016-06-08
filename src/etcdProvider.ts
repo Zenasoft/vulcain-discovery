@@ -127,7 +127,8 @@ export class EtcdProvider implements IProvider
     {
         let self = this;
         let ctx = {
-            watch : this.etcd.watcher(key, null, {recursive:recurse})
+            watch: this.etcd.watcher(key, null, { recursive: recurse }),
+            dispose: function () { this.watch.stop();}
         };
 
         ctx.watch.on('change', function(data) {

@@ -72,9 +72,7 @@ export class Template
                     
                     for(let service of services) 
                     {        
-                        // dev expose all services with no binding address
-                        if( self.options.proxyMode !== 'public' )
-                            self.emitPrivateConfigurations(service, self.options.proxyMode === 'public' && cluster.proxyAddress, ctx);                         
+                        self.emitPrivateConfigurations(service, cluster.proxyAddress, ctx);                         
                         if( self.options.proxyMode !== 'private' )
                             self.emitPublicConfigurations(service, cluster, ctx);
                         self.emitBackends(service, ctx);
